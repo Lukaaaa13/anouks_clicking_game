@@ -118,6 +118,12 @@ class ClickSquareGame:
         self.start_time = None
         self.square_id = None
 
+        self.reaction_times = []   # list of milliseconds per hit
+        self.click_count = 0
+        self.square_spawn_time = None
+        self.last_row_id = None   # to mark ranking row later
+
+
         # === GUI SETUP ===
         self.setup_ui()
 
@@ -241,6 +247,8 @@ class ClickSquareGame:
             fill=square_color,
             outline=""
         )
+        self.square_spawn_time = time.time()
+
 
     def handle_click(self, event):
         """
@@ -257,8 +265,14 @@ class ClickSquareGame:
         if self.square_id in clicked_items:
             # HIT
             self.score += 1
+            self.click_count += 1
+
+            reaction_time = (time.time() - self.square_spawn_time) * 1000  # ms
+            self.reaction_times.append(reaction_time)
+
             self.score_label.config(text=f"Score: {self.score}")
             self.spawn_square()
+
         else:
             # MISS
             self.misses += 1
@@ -301,6 +315,28 @@ class ClickSquareGame:
 
         add_row_to_csv('scores.csv', [date, score, name, misses, accuracy])
 
+        # store row index of this run
+        df = pd.read_csv('scores.csv')
+        self.last_row_id = len(df) - 1
+
+    def plot_reaction_times(self):
+        if not self.reaction_times:
+            return
+
+        x = list(range(1, len(self.reaction_times) + 1))
+        y = self.reaction_times
+
+        plt.figure(figsize=(6, 4))
+        plt.plot(x, y, marker='o')
+        plt.xlabel("Button Number")
+        plt.ylabel("Reaction Time (ms)")
+        plt.title("Reaction Time per Click")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+
     def end_game(self):
         """
         Stops the game and shows the end screen using canvas buttons.
@@ -312,20 +348,34 @@ class ClickSquareGame:
         self.save_score()
 
         # Draw final score text
+        accuracy = float(self.score) / (self.misses + self.score) if (self.misses + self.score) > 0 else 0.0
+
         self.canvas.create_text(
             self.WIDTH // 2,
-            120,
-            text=f"Time's up!\n\nFinal Score: {self.score}",
+            110,
+            text=f"Time's up!\nFinal Score: {self.score}\nAccuracy: {accuracy*100:.2f}%\nAverage time: {sum(self.reaction_times)/float(self.click_count)/1000:.2f} s",
             fill=contrast_color,
-            font=("Arial", 24),
+            font=("Arial", 22),
             justify="center"
         )
+
+        # Show Plot
+        self.plot_btn = CanvasButton(
+            canvas=self.canvas,
+            x=self.WIDTH // 2 - 100,
+            y=220,
+            width=200,
+            height=45,
+            text="Show Reaction Plot",
+            command=self.plot_reaction_times
+        )
+
 
         # Create Repeat button
         self.repeat_btn = CanvasButton(
             canvas=self.canvas,
             x=self.WIDTH // 2 - 100,
-            y=220,
+            y=280,
             width=200,
             height=45,
             text="Repeat",
@@ -336,7 +386,7 @@ class ClickSquareGame:
         self.close_btn = CanvasButton(
             canvas=self.canvas,
             x=self.WIDTH // 2 - 100,
-            y=280,
+            y=340,
             width=200,
             height=45,
             text="Close Game",
@@ -345,13 +395,22 @@ class ClickSquareGame:
 
         # Ranking
         scores_df = pd.read_csv('scores.csv')
-        scores_df = scores_df.sort_values(by='score', ascending=False).head(10)
+        scores_df = scores_df.sort_values(by='score', ascending=False).head(10).reset_index()
 
-        ranking_text = "Rank  Score  Accuracy   Date\n"
-        ranking_text += "-" * 40 + "\n"
+        y_start = 400
+        line_height = 28
+
+        header = "Rank  Score  Accuracy   Date"
+        self.canvas.create_text(
+            self.WIDTH // 2,
+            y_start,
+            text=header,
+            fill=square_color,
+            font=("Courier New", 18, "bold"),
+            justify="center"
+        )
 
         for i, row in enumerate(scores_df.itertuples(), start=1):
-            # Medal for top 3
             if i == 1:
                 medal = '🥇'
             elif i == 2:
@@ -361,17 +420,24 @@ class ClickSquareGame:
             else:
                 medal = ' '
 
-            # Format each column with fixed width
-            ranking_text += f"{i:<4} {row.score:>6.0f}   {row.accuracy*100:>6.2f}%   {row.date}\n"
+            is_current = (row.Index == self.last_row_id)
 
-        self.canvas.create_text(
-            self.WIDTH // 2,
-            500,
-            text=ranking_text,
-            fill=square_color,
-            font=("Courier New", 18),  # Use monospace font for perfect alignment
-            justify="left"
-        )
+            font_style = ("Courier New", 18, "bold") if is_current else ("Courier New", 18)
+
+            line = f"{i:<3} {row.score:>6.0f}   {row.accuracy*100:>6.2f}%   {row.date}"
+
+            self.canvas.create_text(
+                self.WIDTH // 2,
+                y_start + i * line_height,
+                text=line,
+                fill=square_color,
+                font=font_style,
+                justify="center"
+            )
+
+
+
+
 
 
 
